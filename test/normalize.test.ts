@@ -1,35 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalize, tweetUrl } from '../src/domain/normalize.js';
-import type { Clock, DatasetItem, TweetEntity } from '../src/domain/types.js';
-
-const fixedClock: Clock = { now: () => new Date('2026-08-19T12:00:00.000Z') };
-
-function makeTweet(overrides: Partial<TweetEntity> = {}): TweetEntity {
-    return {
-        id: '1899999999999999999',
-        text: 'hello world',
-        lang: 'en',
-        createdAt: new Date('2026-03-04T11:22:33.000Z'),
-        conversationId: '1899999999999999999',
-        isReply: false,
-        isRetweet: false,
-        isQuote: false,
-        inReplyToId: null,
-        quotedTweetId: null,
-        author: {
-            id: '783214',
-            username: 'apify',
-            name: 'Apify',
-            verified: true,
-            followers: 1234,
-            following: 56,
-        },
-        metrics: { likes: 10, retweets: 2, replies: 1, quotes: 0, bookmarks: null, views: 900 },
-        entities: { hashtags: ['buildinpublic'], mentions: ['x'], urls: [], media: [] },
-        source: 'Twitter Web App',
-        ...overrides,
-    };
-}
+import type { DatasetItem } from '../src/domain/types.js';
+import { fixedClock, makeTweet } from './helpers.js';
 
 /** Assessment §5 is a contract: every key present, nothing extra, nothing `undefined`. */
 const EXPECTED_KEYS = {
