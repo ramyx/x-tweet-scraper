@@ -1,7 +1,9 @@
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**'] },
+  // Fixtures are captured payloads, not source: the bundle sample is a fragment
+  // of X's minified JS and does not parse standalone.
+  { ignores: ['dist/**', 'node_modules/**', 'test/fixtures/**'] },
   ...tseslint.configs.recommended,
   {
     rules: {
