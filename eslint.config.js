@@ -22,7 +22,9 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/domain/quota.ts'],
+    // `quota.ts` owns the decision; `dataset.ts` is the pipe it writes through.
+    // Nothing else may reach the dataset.
+    files: ['src/domain/quota.ts', 'src/infra/dataset.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 );
