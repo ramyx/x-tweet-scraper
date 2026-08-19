@@ -24,10 +24,14 @@ const handle = z
     .transform((value) => value.replace(/^@/, '').toLowerCase())
     .pipe(z.string().regex(/^[A-Za-z0-9_]{1,15}$/, 'not a valid X handle'));
 
+/**
+ * Digits only, but no minimum length: the earliest tweets have short ids — jack's
+ * first is literally `20` — and rejecting those would refuse valid input.
+ */
 const tweetId = z
     .string()
     .trim()
-    .regex(/^\d{5,25}$/, 'tweet id must be a numeric string');
+    .regex(/^\d{1,25}$/, 'tweet id must be a numeric string');
 
 const hashtag = z
     .string()
