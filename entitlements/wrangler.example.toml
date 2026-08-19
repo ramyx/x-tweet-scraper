@@ -1,0 +1,16 @@
+name = "x-tweet-scraper-entitlements"
+main = "worker.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The actor id of the published build. Grants are only issued for runs of this actor,
+# which is what stops a fork from obtaining one.
+[vars]
+PUBLISHED_ACTOR_ID = "REPLACE_WITH_YOUR_ACTOR_ID"
+
+[[kv_namespaces]]
+binding = "ENTITLEMENTS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Secrets are set with `wrangler secret put`, never committed:
+#   APIFY_SERVICE_TOKEN, ACTOR_SHARED_SECRET, ED25519_PRIVATE_KEY, ADMIN_SECRET
