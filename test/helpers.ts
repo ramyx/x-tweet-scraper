@@ -1,5 +1,16 @@
-import type { Clock, Filters, MediaEntity, MediaKind, TweetEntity } from '../src/domain/types.js';
+import type {
+    Clock,
+    DatasetItem,
+    Entitlement,
+    Filters,
+    MediaEntity,
+    MediaKind,
+    ResultSink,
+    TweetEntity,
+} from '../src/domain/types.js';
 import { NO_CONSTRAINTS } from '../src/domain/filters.js';
+import { normalize } from '../src/domain/normalize.js';
+import { FREE_TIER_CAP } from '../src/domain/quota.js';
 
 export const fixedClock: Clock = { now: () => new Date('2026-08-19T12:00:00.000Z') };
 
@@ -41,4 +52,46 @@ export function makeMedia(type: MediaKind): MediaEntity {
         url: `https://pbs.twimg.com/media/example.${type === 'photo' ? 'jpg' : 'mp4'}`,
         thumbnail: type === 'photo' ? null : 'https://pbs.twimg.com/media/thumb.jpg',
     };
+}
+
+// ---------------------------------------------------------------------------
+// Quota helpers
+// ---------------------------------------------------------------------------
+
+/** A sink that records instead of writing anywhere. */
+export class RecordingSink implements ResultSink {
+    readonly items: DatasetItem[] = [];
+
+    async push(item: DatasetItem): Promise<void> {
+        this.items.push(item);
+    }
+}
+
+export const PAID: Entitlement = {
+    tier: 'paid',
+    cap: Number.POSITIVE_INFINITY,
+    source: 'service',
+    reason: null,
+};
+
+export const FREE: Entitlement = {
+    tier: 'free',
+    cap: FREE_TIER_CAP,
+    source: 'service',
+    reason: 'free_tier',
+};
+
+/** What the resolver must return whenever entitlement cannot be verified. */
+export const FAIL_CLOSED: Entitlement = {
+    tier: 'free',
+    cap: FREE_TIER_CAP,
+    source: 'fail-closed',
+    reason: 'entitlement_unavailable',
+};
+
+/** `count` distinct dataset items, ids ascending so duplicates are visible. */
+export function makeItems(count: number): DatasetItem[] {
+    return Array.from({ length: count }, (_, i) =>
+        normalize(makeTweet({ id: String(1900000000000000000n + BigInt(i)) }), fixedClock),
+    );
 }
