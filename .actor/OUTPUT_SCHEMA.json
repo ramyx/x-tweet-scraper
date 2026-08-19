@@ -1,0 +1,44 @@
+{
+  "actorSpecification": 1,
+  "fields": {
+    "type": "object",
+    "required": ["id", "url", "text", "createdAt", "author", "metrics", "entities", "scrapedAt"],
+    "properties": {
+      "id": { "type": "string" },
+      "url": { "type": "string" },
+      "text": { "type": "string" },
+      "lang": { "type": ["string", "null"] },
+      "createdAt": { "type": "string" },
+      "conversationId": { "type": ["string", "null"] },
+      "isReply": { "type": "boolean" },
+      "isRetweet": { "type": "boolean" },
+      "isQuote": { "type": "boolean" },
+      "inReplyToId": { "type": ["string", "null"] },
+      "quotedTweetId": { "type": ["string", "null"] },
+      "author": { "type": "object" },
+      "metrics": { "type": "object" },
+      "entities": { "type": "object" },
+      "source": { "type": ["string", "null"] },
+      "scrapedAt": { "type": "string" }
+    }
+  },
+  "views": {
+    "overview": {
+      "title": "Tweets",
+      "transformation": {
+        "fields": ["id", "createdAt", "author", "text", "metrics", "url"]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "id": { "label": "ID" },
+          "createdAt": { "label": "Created at" },
+          "author": { "label": "Author" },
+          "text": { "label": "Text" },
+          "metrics": { "label": "Metrics" },
+          "url": { "label": "URL" }
+        }
+      }
+    }
+  }
+}
