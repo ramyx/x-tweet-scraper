@@ -11,7 +11,7 @@ export default tseslint.config(
         'error',
         {
           // The free-tier cap is only enforceable if there is exactly one write path
-          // to the dataset. See docs/05. `quota.ts` is exempted in its own override.
+          // to the dataset. `quota.ts` is exempted in its own override below.
           selector: "CallExpression[callee.property.name='pushData']",
           message: 'pushData() is only allowed in src/domain/quota.ts (free-tier enforcement point).',
         },

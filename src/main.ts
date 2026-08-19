@@ -2,7 +2,7 @@ import { Actor, log } from 'apify';
 
 /**
  * Entry point. Wiring only — every decision lives in a module that can be tested
- * without the platform. See docs/02 for the layering rule.
+ * without the platform.
  */
 await Actor.init();
 
