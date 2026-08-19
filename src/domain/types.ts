@@ -148,6 +148,26 @@ export type FilterReason = keyof Filters;
 export type FilterResult = { readonly kept: true } | { readonly kept: false; readonly rejectedBy: FilterReason };
 
 // ---------------------------------------------------------------------------
+// Entitlement (assessment §6)
+// ---------------------------------------------------------------------------
+
+export type Tier = 'free' | 'paid';
+
+/**
+ * The answer to "how many results may this run emit?", resolved from a server we
+ * control. Nothing derived from actor input may ever produce one of these.
+ */
+export interface Entitlement {
+    readonly tier: Tier;
+    /** Hard ceiling for the run. `Infinity` for paid: the request itself is the limit. */
+    readonly cap: number;
+    /** How the answer was reached. `fail-closed` means the check did not succeed. */
+    readonly source: 'service' | 'fail-closed';
+    /** Machine-readable explanation, surfaced in the run summary. */
+    readonly reason: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Ports
 // ---------------------------------------------------------------------------
 
@@ -157,3 +177,11 @@ export interface Clock {
 }
 
 export const systemClock: Clock = { now: () => new Date() };
+
+/**
+ * Where accepted results go. Deliberately a dumb pipe with no policy of its own:
+ * every decision about *whether* an item may be emitted belongs to the quota guard.
+ */
+export interface ResultSink {
+    push(item: DatasetItem): Promise<void>;
+}
