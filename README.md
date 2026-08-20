@@ -274,9 +274,23 @@ Their summaries are reproduced verbatim under [Examples](#examples).
 
 ### Run it yourself
 
-[Setup](#setup) deploys the whole thing — actor and entitlements service — from a
-fresh clone, with every command spelled out. It needs an Apify account and a
-Cloudflare one, both on their free tiers, and takes a few minutes.
+How far you go depends on how much you want to stand up:
+
+| What you have | What you can do | Items you get |
+|---|---|---|
+| The repo | `npm ci && npm run check` — 170 tests, no network | — |
+| \+ Node | `node dist/main.js` against live X, no accounts needed | **10** |
+| \+ an Apify account | `apify push` and run it on the platform | **10** |
+| \+ the Cloudflare worker | everything, including the benchmark | as requested |
+
+The 10-item ceiling in the middle rows is not a missing piece: with no entitlements
+service to ask, the resolver fails closed and caps the run. A clone that returns
+exactly 10 items and logs `reason: "local_run"` or `"not_configured"` **is** the gate
+working. Standing up the worker ([Setup](#setup)) is what opens the entitled path.
+
+So the extraction, the output schema, the filters and the free-tier gate can all be
+verified without deploying anything. Only reproducing the performance number needs
+both services.
 
 ### Verify the free-tier gate yourself
 
