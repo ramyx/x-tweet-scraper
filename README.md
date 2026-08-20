@@ -37,8 +37,8 @@ appear anywhere in the tree.
 npm ci && npm run check      # typecheck + lint + 170 tests, no network
 ```
 
-Full instructions — local, Apify and the entitlements service — are in
-[docs/SETUP.md](docs/SETUP.md).
+Deploying your own copy — actor and entitlements service — is in
+[Setup](#setup) at the end of this file.
 
 ### Example input
 
@@ -275,8 +275,8 @@ Their summaries are reproduced verbatim under [Examples](#examples).
 ### Run it yourself
 
 The actor is deployed at the link at the top of this file. If you cannot reach it,
-[docs/SETUP.md](docs/SETUP.md) deploys the whole thing — actor and entitlements
-service — from a fresh clone, with every command spelled out.
+[Setup](#setup) deploys the whole thing from a fresh clone, with every command
+spelled out.
 
 ### Verify the free-tier gate yourself
 
@@ -308,12 +308,98 @@ main.ts        wiring only — the one place that knows about Apify
   └── infra/   transport: HTTP pool, retry policy, entitlements, dataset sink
 ```
 
-`domain/` imports nothing from the other layers. That is what lets the filter,
-normalizer and quota tests — the modules carrying the output contract and the
-free-tier requirement — run in milliseconds with no network and no mocking.
+Dependencies point downward, with one hard rule: **`domain/` imports nothing from
+`x/`, `infra/` or `apify`.** That is what lets the filter, normalizer and quota
+tests — the modules carrying the output contract and the free-tier requirement —
+run in milliseconds with no network and no mocking.
 
-Full data-flow diagram and a module-by-module walkthrough:
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+### Data flow
+
+```
+INPUT (json)
+  │  parseInput()   ── zod, .strict()   unknown field → validation error, exit 1
+  ▼                                     searchTerms   → rejected with the reason
+ActorInput ──► Filters
+  │
+  ├──► resolveEntitlement() ──HTTPS──► entitlements service ──► { tier, cap }
+  │                                    any failure ─────────► free / cap 10
+  │                                                             ▼
+  │                                                     QuotaGuard(cap)
+  │                                          the only holder of the dataset sink
+  ▼
+targets
+  ├─ tweetIds[]  ─► TweetResultByRestId
+  └─ fromUsers[] ─► UserByScreenName ─► UserTweets (cursor loop)
+                                         │
+                       raw payload ──────┤ decode (zod) — failure degrades ONE item
+                                         ▼
+                                   TweetEntity
+                                         │ applyFilters()  pure; reports rejectedBy
+                                         ▼ kept
+                                   normalize()  the §5 contract, exactly
+                                         ▼
+                                guard.offer(item)
+                                   ├─ accepted → Actor.pushData
+                                   └─ refused  → exhausted() stops the pager
+                                         ▼
+                                   RunSummary → log + KV
+```
+
+### Modules
+
+| Module | Responsibility |
+|---|---|
+| `domain/types.ts` | The §5 contract, `TweetEntity`, `Filters`, `Entitlement`, and the `Clock` / `ResultSink` ports |
+| `domain/normalize.ts` | `TweetEntity → DatasetItem`. Fields are listed one by one, not spread, so "does this become public?" is a decision written by hand |
+| `domain/filters.ts` | The §4 pipeline as an ordered list of `{ reason, test }` rules, reporting *which* constraint rejected a tweet |
+| `domain/quota.ts` | `QuotaGuard` — the free-tier enforcement point |
+| `x/client.ts` | Header assembly, retry loop, token rotation, feature healing, query-id invalidation |
+| `x/guestToken.ts` | Mint / cache / rotate, single-flight, mint budget, snapshot for migrations |
+| `x/queryIds.ts` | Runtime resolution from X's bundles: KV cache → live extraction → pinned map |
+| `x/ops.ts` | The guest-reachable operations, and the replies fallback |
+| `x/decode/*.ts` | User, tweet and timeline payloads → domain entities |
+| `infra/http.ts` | undici, one connection pool per proxy session |
+| `infra/retry.ts` | Failure classification, backoff with jitter, retry budget |
+| `infra/entitlements.ts` | Asks the service, verifies the signed grant, fails closed |
+| `infra/dataset.ts` | The one `Actor.pushData` call in the codebase |
+| `app/input.ts` | Zod validation at the boundary, projection to `Filters` |
+| `app/run.ts` | Target planning, cursor loop, per-target degradation |
+| `app/state.ts` | Resumable state and the global dedupe set |
+| `app/summary.ts` | Accumulates the run report |
+
+### Decoders are written against captured payloads
+
+They match what X returns today, not what its older public API suggests:
+
+| Commonly assumed | What X actually returns |
+|---|---|
+| `user.legacy.screen_name`, `followers_count` | The User object has **no `legacy`**: `core.screen_name`, `relationship_counts.followers`, `verification.*` |
+| `timeline_v2.timeline.instructions` | `timeline.timeline.instructions` |
+| `UserTweets` includes the profile | Only `{ __typename, timeline }` — the profile comes from `UserByScreenName` |
+
+Live responses are committed under `test/fixtures/`, so a change in X's shape shows
+up as a failing test rather than as empty output.
+
+### Two things that look like filters and are not
+
+**`isBeforeWindow`** is flow control: timelines are newest-first, so the first tweet
+older than `since` means every remaining page is older too, and the pager stops.
+
+**The global dedupe set** spans targets, because scraping two accounts where one
+retweeted the other would otherwise emit the tweet twice.
+
+### Error taxonomy
+
+| Class | Examples | Behaviour |
+|---|---|---|
+| `retryable` | 429, 5xx, socket errors | Backoff with jitter, bounded by a run-wide budget |
+| `auth` | 401, 403 *with* "Bad guest token" | Rotate the guest token once, then give up on the target |
+| `schema` | 404 (stale query id), 400 naming missing features | Invalidate and re-extract, or heal the feature map from X's own error text |
+| `fatal` | 400, plain 403, other 4xx | No retry: repeating it is noise |
+
+A plain 403 and a 403 carrying "Bad guest token" are deliberately different classes:
+the first is a wall, the second an expired credential. Decode failures degrade a
+single item and increment a counter — one malformed tweet must never end a run.
 
 ---
 
@@ -688,3 +774,102 @@ control tied to an account. Before running this for a client I would raise:
 - **With another two days:** a syndication-CDN fallback for when the guest door
   narrows further, the cross-target concurrency the design already allows, and the
   incremental-scrape path that the persisted cursors already make cheap.
+
+---
+
+## Setup
+
+Local development needs no accounts. Deploying needs an Apify account and a
+Cloudflare one.
+
+### Run locally
+
+```bash
+git clone https://github.com/ramyx/x-tweet-scraper.git
+cd x-tweet-scraper && npm ci && npm run check
+npm run build
+mkdir -p storage/key_value_stores/default
+echo '{ "fromUsers": ["apify"], "maxResults": 5,
+        "proxyConfiguration": { "useApifyProxy": false } }' \
+  > storage/key_value_stores/default/INPUT.json
+node dist/main.js
+```
+
+Results land in `storage/datasets/default/`. A local run has no platform identity to
+verify, so entitlement resolves to free with reason `local_run` — the fail-closed
+path working as designed.
+
+### Deploy the actor
+
+```bash
+npm install -g apify-cli && apify login
+apify push                      # note the actor id it prints
+```
+
+### Deploy the entitlements service
+
+```bash
+npm install -g wrangler && wrangler login
+cd entitlements
+cp wrangler.example.toml wrangler.toml
+wrangler kv namespace create ENTITLEMENTS      # paste the id into wrangler.toml
+```
+
+Set `PUBLISHED_ACTOR_ID` in `wrangler.toml` to your actor id — that value is the
+anti-fork pin, since grants are only issued for runs of that actor.
+
+Generate the signing keypair. The worker signs; the actor only ever verifies, so it
+never holds the private half:
+
+```bash
+node -e '
+const { generateKeyPairSync } = require("node:crypto");
+const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+console.log("PRIVATE (worker):", privateKey.export({format:"pkcs8",type:"pkcs8"}).toString("base64"));
+console.log("PUBLIC  (actor) :", publicKey.export({format:"der",type:"spki"}).toString("base64"));
+'
+```
+
+```bash
+wrangler secret put APIFY_SERVICE_TOKEN   # YOUR Apify API token, never a runner's
+wrangler secret put ACTOR_SHARED_SECRET   # random 32+ chars; also goes in the actor
+wrangler secret put ED25519_PRIVATE_KEY
+wrangler secret put ADMIN_SECRET          # random 32+ chars, for granting entitlements
+wrangler deploy
+curl https://<your-worker>.workers.dev/v1/health     # {"ok":true}
+```
+
+`APIFY_SERVICE_TOKEN` is what makes the check authoritative: the worker asks the
+Apify API itself who owns the run, rather than believing the caller.
+
+### Wire them together
+
+Actor → Settings → Environment variables, all marked **secret**, then rebuild:
+
+| Variable | Value |
+|---|---|
+| `ENTITLEMENTS_URL` | `https://<your-worker>.workers.dev/v1/check` |
+| `ENTITLEMENTS_SHARED_SECRET` | the same `ACTOR_SHARED_SECRET` |
+| `ENTITLEMENTS_PUBLIC_KEY` | the public key above |
+
+These only say *where to ask*. Faking them makes the call fail, and failing means
+free.
+
+### Granting entitlement
+
+```bash
+curl -X POST https://<your-worker>.workers.dev/v1/admin/grant \
+  -H "authorization: Bearer $ADMIN_SECRET" -H 'content-type: application/json' \
+  -d '{"userId":"<apify user id>","tier":"paid"}'
+```
+
+### Troubleshooting
+
+| Log line | Cause |
+|---|---|
+| `reason: "local_run"` | Running locally. Expected. |
+| `reason: "not_configured"` | The three actor env vars are missing. |
+| `reason: "service_unreachable"` | Wrong URL or the worker is down. Fail-closed is working. |
+| `reason: "bad_signature"` | `ENTITLEMENTS_PUBLIC_KEY` does not match the worker's private key. |
+| `reason: "actor_mismatch"` | `PUBLISHED_ACTOR_ID` is not this actor. |
+| Worker `403 unknown run` | `APIFY_SERVICE_TOKEN` cannot read the run. |
