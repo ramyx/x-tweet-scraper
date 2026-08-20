@@ -255,6 +255,49 @@ page, rather than fetching data and discarding it.
 reached, it verified the run against the Apify API, and the actor verified its
 signature. The cap moved because the server changed its answer.
 
+## For the reviewer
+
+Everything below can be checked without any coordination with me.
+
+### Just look at the output
+
+Two runs of the deployed actor, same build and same account, differing only in
+whether the entitlements service had granted the user:
+
+| Run | Input | Result |
+|---|---|---|
+| `PeqTgdwFQyR1bkE7Y` | `maxResults: 1000`, not entitled | 10 items, `limited: true`, `reason: free_tier` |
+| `zwYXrq0UZ6T001IeD` | `maxResults: 100`, entitled | 100 items, `limited: false` |
+| `7h7fLS2ApJrovWdma` | `elonmusk`, residential | 99 items in 7.1 s |
+
+Their summaries are reproduced verbatim under [Examples](#examples).
+
+### Run it yourself
+
+The actor is deployed at the link at the top of this file. If you cannot reach it,
+[docs/SETUP.md](docs/SETUP.md) deploys the whole thing — actor and entitlements
+service — from a fresh clone, with every command spelled out.
+
+### Verify the free-tier gate yourself
+
+Run it once as-is: you are not on the allow-list, so you get 10 items whatever
+`maxResults` says. Then entitle yourself with the admin secret included in my
+submission email:
+
+```bash
+curl -X POST https://x-tweet-scraper-entitlements.ramiro-daniel-ing.workers.dev/v1/admin/grant \
+  -H "authorization: Bearer <ADMIN_SECRET from the email>" \
+  -H 'content-type: application/json' \
+  -d '{"userId":"<your Apify user id>","tier":"paid"}'
+```
+
+and run the identical input again. Nothing on your side changed; the ceiling did.
+
+Handing you that secret is deliberate. The gate's security is that the *decision*
+lives on a server the runner does not control — not that the reviewer is kept away
+from it. You can also confirm the negative case: grant a different user id and your
+own run is still capped, because the grant is bound to the run it was issued for.
+
 ## Architecture
 
 ```
