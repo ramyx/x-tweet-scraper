@@ -9,7 +9,9 @@
       "type": "array",
       "editor": "stringList",
       "description": "Handles without @. Returns their recent tweets.",
-      "prefill": ["apify"]
+      "prefill": [
+        "apify"
+      ]
     },
     "tweetIds": {
       "title": "Tweet IDs",
@@ -47,9 +49,27 @@
       "editor": "textfield",
       "description": "ISO-639-1 code, e.g. en"
     },
-    "minLikes":    { "title": "Min likes",    "type": "integer", "editor": "number", "minimum": 0 },
-    "minRetweets": { "title": "Min retweets", "type": "integer", "editor": "number", "minimum": 0 },
-    "minReplies":  { "title": "Min replies",  "type": "integer", "editor": "number", "minimum": 0 },
+    "minLikes": {
+      "title": "Min likes",
+      "type": "integer",
+      "editor": "number",
+      "minimum": 0,
+      "description": "Minimum like count. Tweets below this are dropped."
+    },
+    "minRetweets": {
+      "title": "Min retweets",
+      "type": "integer",
+      "editor": "number",
+      "minimum": 0,
+      "description": "Minimum retweet count. Tweets below this are dropped."
+    },
+    "minReplies": {
+      "title": "Min replies",
+      "type": "integer",
+      "editor": "number",
+      "minimum": 0,
+      "description": "Minimum reply count. Tweets below this are dropped."
+    },
     "onlyVerified": {
       "title": "Only verified authors",
       "type": "boolean",
@@ -61,18 +81,47 @@
       "type": "string",
       "editor": "select",
       "default": "any",
-      "enum": ["any", "text_only", "images", "video", "links"],
-      "enumTitles": ["Any", "Text only", "Images", "Video", "Links"]
+      "enum": [
+        "any",
+        "text_only",
+        "images",
+        "video",
+        "links"
+      ],
+      "enumTitles": [
+        "Any",
+        "Text only",
+        "Images",
+        "Video",
+        "Links"
+      ],
+      "description": "Keep only tweets carrying the selected kind of attachment."
     },
-    "includeReplies":  { "title": "Include replies",  "type": "boolean", "default": false },
-    "includeRetweets": { "title": "Include retweets", "type": "boolean", "default": false },
+    "includeReplies": {
+      "title": "Include replies",
+      "type": "boolean",
+      "default": false,
+      "description": "Whether replies count as results. Uses the UserTweetsAndReplies timeline when enabled."
+    },
+    "includeRetweets": {
+      "title": "Include retweets",
+      "type": "boolean",
+      "default": false,
+      "description": "Whether retweets count as results."
+    },
     "sortBy": {
       "title": "Sort by",
       "type": "string",
       "editor": "select",
       "default": "latest",
-      "enum": ["latest", "top"],
-      "enumTitles": ["Latest", "Top"],
+      "enum": [
+        "latest",
+        "top"
+      ],
+      "enumTitles": [
+        "Latest",
+        "Top"
+      ],
       "description": "Author timelines are chronological. 'top' is accepted but only meaningful on ranked surfaces, which this build does not implement."
     },
     "maxResults": {
@@ -87,7 +136,12 @@
       "title": "Proxy configuration",
       "type": "object",
       "editor": "proxy",
-      "default": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"] },
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": [
+          "RESIDENTIAL"
+        ]
+      },
       "description": "Residential rotation is recommended; datacenter IPs are blocked by X more aggressively."
     }
   },
