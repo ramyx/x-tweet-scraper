@@ -87,6 +87,174 @@ ISO-8601 UTC.
 
 ---
 
+## Examples
+
+All output below is verbatim from runs of the deployed actor.
+
+### Tweets by author
+
+Input:
+
+```json
+{ "fromUsers": ["apify"], "maxResults": 100,
+  "proxyConfiguration": { "useApifyProxy": true } }
+```
+
+One dataset item, with video attached:
+
+```json
+{
+  "id": "2090465188768096585",
+  "url": "https://x.com/apify/status/2090465188768096585",
+  "text": "Sessions are gone 🚨 New MCP spec 2026-07-28 goes fully stateless, and Apify has supported it since the week it shipped.\n\nThree weeks in, 1 client in 8 takes the stateless path, up from 1% a week ago.\n\nWatch @michaeldaigler_ walk through the major core protocol updates.",
+  "lang": "en",
+  "createdAt": "2026-08-20T15:45:14.000Z",
+  "conversationId": "2090465188768096585",
+  "isReply": false,
+  "isRetweet": false,
+  "isQuote": false,
+  "inReplyToId": null,
+  "quotedTweetId": null,
+  "author": {
+    "id": "3510729917",
+    "username": "apify",
+    "name": "Apify",
+    "verified": true,
+    "followers": 12276,
+    "following": 296
+  },
+  "metrics": {
+    "likes": 0,
+    "retweets": 0,
+    "replies": 1,
+    "quotes": 0,
+    "bookmarks": 0,
+    "views": null
+  },
+  "entities": {
+    "hashtags": [],
+    "mentions": [
+      "michaeldaigler_"
+    ],
+    "urls": [],
+    "media": [
+      {
+        "type": "video",
+        "url": "https://video.twimg.com/amplify_video/2090464741877555200/vid/avc1/1920x1244/atjJR5ed1epTKJfW.mp4?tag=29",
+        "thumbnail": "https://pbs.twimg.com/amplify_video_thumb/2090464741877555200/img/c8OwOlx3_C7fk8GM.jpg"
+      }
+    ]
+  },
+  "source": "Twitter Web App",
+  "scrapedAt": "2026-08-20T16:09:00.035Z"
+}
+```
+
+Note `views: null` — X does not expose the counter on this surface, and the schema
+requires the key to be present rather than omitted. The video `url` is the
+highest-bitrate mp4 of the four variants X offers; `thumbnail` is the poster frame.
+
+### A single tweet by id
+
+Input:
+
+```json
+{ "tweetIds": ["20"] }
+```
+
+```json
+{
+  "id": "20",
+  "url": "https://x.com/jack/status/20",
+  "text": "just setting up my twttr",
+  "lang": "en",
+  "createdAt": "2006-03-21T20:50:14.000Z",
+  "author": { "id": "12", "username": "jack", "name": "jack",
+              "verified": true, "followers": 11460767, "following": 3 },
+  "...": "remaining keys as in the schema"
+}
+```
+
+### Filters
+
+```json
+{ "fromUsers": ["apify"], "minLikes": 25, "language": "en",
+  "mediaType": "video", "includeRetweets": false, "maxResults": 50 }
+```
+
+The run summary reports what each filter removed, so an empty result set explains
+itself instead of looking like a failure:
+
+```json
+"filteredOut": { "includeReplies": 67, "includeRetweets": 50 }
+```
+
+### Search is rejected, not silently empty
+
+```json
+{ "searchTerms": ["apify"] }
+```
+
+```
+Invalid input:
+  - searchTerms: searchTerms is not supported by this build. X's SearchTimeline
+    operation is not reachable with a guest token (observed: HTTP 404 with an empty
+    body, while UserByScreenName returns 200 over the identical transport).
+    Use fromUsers and/or tweetIds instead.
+```
+
+### The free-tier cap, demonstrated
+
+Same build, same account, same input. The only difference is one record in a
+key-value store on a server the runner does not control.
+
+**Before granting entitlement** — `maxResults: 1000`:
+
+```json
+{
+  "requested": 1000,
+  "fetched": 21,
+  "pushed": 10,
+  "limited": true,
+  "reason": "free_tier",
+  "cap": 10,
+  "entitlement": {
+    "tier": "free",
+    "source": "service"
+  },
+  "requests": 2,
+  "durationMs": 2727
+}
+```
+
+Ten items. Note `requests: 2`: the cap stopped the pager from asking X for a second
+page, rather than fetching data and discarding it.
+
+**After granting entitlement** — same actor, `maxResults: 100`:
+
+```json
+{
+  "requested": 100,
+  "fetched": 228,
+  "pushed": 100,
+  "limited": false,
+  "reason": null,
+  "cap": 100,
+  "entitlement": {
+    "tier": "paid",
+    "source": "service"
+  },
+  "requests": 13,
+  "retries": 0,
+  "guestTokensMinted": 1,
+  "durationMs": 27352
+}
+```
+
+`entitlement.source` is `"service"` in both, not `"fail-closed"`: the worker was
+reached, it verified the run against the Apify API, and the actor verified its
+signature. The cap moved because the server changed its answer.
+
 ## Architecture
 
 ```
@@ -164,8 +332,8 @@ re-extracted — once per run, not once per request.
 `features` is a boolean map the gateway validates strictly. When it wants a new one
 it answers `400 … The following features cannot be null: <names>`. That error is
 self-describing, so the client parses the names, defaults them to `true` and retries
-once. X's most common breaking change becomes a 200ms hiccup instead of an outage.
-(Not currently exercised: all three operations answer with an empty map today.)
+once, so X's most common breaking change becomes a 200 ms hiccup instead of an
+outage. The operations used today need no flags at all; this is insurance.
 
 ---
 
@@ -459,14 +627,12 @@ control tied to an account. Before running this for a client I would raise:
 
 ## Decisions and trade-offs
 
-- **Probed before coding.** Three assumptions I had written from memory did not
-  survive contact with the API: the User object no longer has `legacy`, the
-  timeline path is not `timeline_v2`, and `UserTweets` returns no profile fields.
-  Finding that at hour zero rather than hour five is the entire argument for
-  spending the first 45 minutes on `curl`.
-- **Rejected search rather than half-shipping it.** The brief says honest scoping
-  counts in your favour; I took that literally, and documented the controls that
-  make the diagnosis conclusive rather than asserting a wall.
+- **Probed the API before writing the decoders**, and wrote them against captured
+  payloads rather than against the field names one expects. X's User object has
+  moved off `legacy`, and a decoder written from memory decodes to nothing today.
+- **Rejected search rather than half-shipping it.** The controls in
+  [Search](#search-what-i-tried-and-why-it-is-walled) are the evidence, and the
+  limits of that evidence are stated alongside it.
 - **Query ids at runtime, not constants.** The most likely way this rots is the one
   thing designed against.
 - **The gate is structural, not careful.** One write path, machine-checked; a real
@@ -476,7 +642,6 @@ control tied to an account. Before running this for a client I would raise:
   that runs offline in milliseconds over exactly the code that carries the contract.
 - **Named the limit of the anti-fork argument** instead of overclaiming. A fork can
   strip the check; what it cannot do is get free results from the published actor.
-- **With another two days:** measure on residential properly, implement the
-  syndication CDN fallback for when the guest door narrows, add the cross-target
-  concurrency the design already allows, and stand up the incremental-scrape path
-  that the persisted `lastSeenId` already makes cheap.
+- **With another two days:** a syndication-CDN fallback for when the guest door
+  narrows further, the cross-target concurrency the design already allows, and the
+  incremental-scrape path that the persisted cursors already make cheap.

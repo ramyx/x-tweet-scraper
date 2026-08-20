@@ -132,20 +132,27 @@ stops instead of walking years of history to discard it one item at a time.
 spans targets: if you scrape two accounts and one retweeted the other, a per-page
 check would still emit the tweet twice.
 
-## 6. Decoding against reality, not memory
+## 6. Decoders are written against captured payloads
 
-The decoders were written *after* probing X, and three assumptions did not survive
-contact:
+The decoders match what X returns today, not the field names one would expect from
+its older public API. Three differences matter enough to state:
 
-| Assumed | Actually |
+| Commonly assumed | What X actually returns |
 |---|---|
 | `user.legacy.screen_name`, `followers_count` | The User object has **no `legacy`**: `core.screen_name`, `relationship_counts.followers`, `verification.*` |
 | `timeline_v2.timeline.instructions` | `timeline.timeline.instructions` |
-| `UserTweets` returns the profile too | It returns only `{ __typename, timeline }` |
+| `UserTweets` includes the profile | It returns only `{ __typename, timeline }` — the profile comes from the `UserByScreenName` call that resolved the id |
 
-Fixtures captured from the live API are committed under `test/fixtures/`, and the
-decoder tests run against them. That is also why `count` is fixed at 20 in the
-pager: X ignores the parameter, measured across 20/40/100/200.
+Responses captured from the live API are committed under `test/fixtures/`, and the
+decoder tests run against them, so a change in X's shape shows up as a failing test
+rather than as empty output.
+
+Two behaviours discovered by measurement rather than by reading:
+
+- **`count` is ignored.** Requested at 20, 40, 100 and 200, the response is the same.
+- **Pagination is account-dependent.** A busy author returns ~99 entries and *no
+  cursor*; a quieter one returns ~20 with a cursor. The pager handles both, and the
+  ceiling is documented in the README rather than hidden.
 
 ## 7. Error taxonomy
 
