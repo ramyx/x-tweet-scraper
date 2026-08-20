@@ -5,7 +5,7 @@ guest-token auth, a strict output contract, and a free-tier gate whose source of
 truth is a server the runner does not control.
 
 - **Repo:** https://github.com/ramyx/x-tweet-scraper
-- **Actor:** _(pending deploy — see [docs/SETUP.md](docs/SETUP.md))_
+- **Actor:** https://console.apify.com/actors/bEAaMlZm4LDT5RQuh (`bEAaMlZm4LDT5RQuh`)
 - **Tests:** 170, all offline against captured fixtures
 
 ---

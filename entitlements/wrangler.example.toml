@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 # The actor id of the published build. Grants are only issued for runs of this actor,
 # which is what stops a fork from obtaining one.
 [vars]
-PUBLISHED_ACTOR_ID = "REPLACE_WITH_YOUR_ACTOR_ID"
+PUBLISHED_ACTOR_ID = "bEAaMlZm4LDT5RQuh"
 
 [[kv_namespaces]]
 binding = "ENTITLEMENTS"
