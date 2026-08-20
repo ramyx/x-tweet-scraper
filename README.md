@@ -754,6 +754,14 @@ control tied to an account. Before running this for a client I would raise:
 
 ---
 
+## Tooling
+
+I used Claude Code as a development aid throughout, supervised step by step. The API
+investigation, the architecture decisions and the scoping calls are mine, and I can
+talk through any part of the codebase.
+
+---
+
 ## Decisions and trade-offs
 
 - **Probed the API before writing the decoders**, and wrote them against captured
