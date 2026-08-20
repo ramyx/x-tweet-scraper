@@ -5,7 +5,8 @@ guest-token auth, a strict output contract, and a free-tier gate whose source of
 truth is a server the runner does not control.
 
 - **Repo:** https://github.com/ramyx/x-tweet-scraper
-- **Actor:** https://console.apify.com/actors/bEAaMlZm4LDT5RQuh (`bEAaMlZm4LDT5RQuh`)
+- **Actor:** deployed and running as `bEAaMlZm4LDT5RQuh`, kept private — see
+  [Why the actor is not published](#why-the-actor-is-not-published)
 - **Tests:** 170, all offline against captured fixtures
 
 ---
@@ -274,9 +275,25 @@ Their summaries are reproduced verbatim under [Examples](#examples).
 
 ### Run it yourself
 
-The actor is deployed at the link at the top of this file. If you cannot reach it,
-[Setup](#setup) deploys the whole thing from a fresh clone, with every command
-spelled out.
+[Setup](#setup) deploys the whole thing — actor and entitlements service — from a
+fresh clone, with every command spelled out. It takes a few minutes and needs an
+Apify account and a Cloudflare one, both on their free tiers.
+
+### Why the actor is not published
+
+The brief asks for a deployed actor and accepts either sharing it *or* providing
+deploy steps plus the actor URL (§9). I took the second route deliberately.
+
+Apify has no "public link, private listing" state: making an actor reachable by
+someone else means publishing it to the Apify Store, which requires accepting its
+distribution terms. That is a commercial commitment about how the actor is
+distributed, and it is not something this assessment needs — so I did not sign it
+for a take-home.
+
+The actor is deployed and working; the run ids above are real runs of it, and their
+output is reproduced verbatim under [Examples](#examples). If you would like to run
+it directly rather than deploy your own, send me an Apify account and I will grant
+access to it immediately.
 
 ### Verify the free-tier gate yourself
 
