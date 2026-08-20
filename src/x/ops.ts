@@ -1,5 +1,5 @@
 import type { AuthorEntity, TweetEntity } from '../domain/types.js';
-import type { Session, XClient } from './client.js';
+import { XRequestError, type Session, type XClient } from './client.js';
 import { decodeTweetResult } from './decode/tweet.js';
 import { decodeUserTimeline, type DecodedPage } from './decode/timeline.js';
 import { decodeUserByScreenName, type UserUnavailableReason } from './decode/user.js';
@@ -52,23 +52,51 @@ export interface TimelinePageRequest {
     readonly userId: string;
     /** `null` for the first page. */
     readonly cursor: string | null;
-    /** X honours up to 100, which is the difference between 5 requests and 2. */
+    /**
+     * Sent for completeness; X ignores it. Measured across 20/40/100/200, the
+     * response is identical, so page size is not a lever we control.
+     */
     readonly count: number;
     readonly includeReplies: boolean;
+    /** Called when the replies timeline turns out to be closed to guests. */
+    readonly onRepliesUnavailable?: (() => void) | undefined;
 }
 
 export type TimelinePageResult = { readonly ok: true; readonly page: DecodedPage } | UnavailableResult;
 
-/** One page of an author's timeline. */
+/**
+ * One page of an author's timeline.
+ *
+ * `UserTweetsAndReplies` is present in X's bundle but answers **404 with an empty
+ * body** to a guest token, exactly as `SearchTimeline` does — verified 2026-08-20
+ * while `UserTweets` returned 200 over the identical transport. So `includeReplies`
+ * degrades to the plain timeline rather than failing the target: replies that
+ * appear there are still returned, standalone replies are not. The caller is told,
+ * so the run summary and the logs can say so honestly.
+ */
 export async function fetchTimelinePage(
     client: XClient,
     session: Session,
     request: TimelinePageRequest,
 ): Promise<TimelinePageResult> {
-    const operation = request.includeReplies
-        ? OPERATIONS.userTweetsAndReplies
-        : OPERATIONS.userTweets;
+    if (request.includeReplies) {
+        try {
+            return await callTimeline(client, session, request, OPERATIONS.userTweetsAndReplies);
+        } catch (error: unknown) {
+            if (!(error instanceof XRequestError) || error.status !== 404) throw error;
+            request.onRepliesUnavailable?.();
+        }
+    }
 
+    return callTimeline(client, session, request, OPERATIONS.userTweets);
+}
+
+async function callTimeline(
+    client: XClient,
+    session: Session,
+    request: TimelinePageRequest,
+    operation: string,
+): Promise<TimelinePageResult> {
     const body = await client.call({
         operation,
         variables: {

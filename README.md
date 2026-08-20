@@ -14,10 +14,11 @@ truth is a server the runner does not control.
 
 | Surface | Operation | Status |
 |---|---|---|
-| Tweets by author | `UserTweets` / `UserTweetsAndReplies` | ✅ implemented |
+| Tweets by author | `UserTweets` | ✅ implemented |
 | A single tweet by id | `TweetResultByRestId` | ✅ implemented |
 | A user profile by handle | `UserByScreenName` | ✅ implemented |
-| Free-text search | `SearchTimeline` | ❌ **not implemented — auth-walled to guests** |
+| Free-text search | `SearchTimeline` | ❌ **not reachable with a guest token** |
+| Replies timeline | `UserTweetsAndReplies` | ❌ **not reachable either** — `includeReplies` degrades, see below |
 
 All three required surfaces work with a plain guest token and **no feature flags at
 all**. `searchTerms` is rejected at input validation with an explanation, rather
@@ -170,29 +171,33 @@ once. X's most common breaking change becomes a 200ms hiccup instead of an outag
 
 ## Search: what I tried and why it is walled
 
-`SearchTimeline` returns **HTTP 404 with a zero-length body** to a guest.
+`SearchTimeline` returns **HTTP 404 with a zero-length body** to a guest, using the
+query id read from X's own bundle.
 
-A bare 404 proves nothing on its own, so it was probed against controls:
+| # | Request (same token, same headers) | Result |
+|---|---|---|
+| 1 | `SearchTimeline` on `api.x.com` | `404`, body length **0** |
+| 2 | `SearchTimeline` on `x.com/i/api` | `404`, body length **0** |
+| 3 | **control:** `UserByScreenName`, same host and headers | **`200`**, 2723 bytes |
+| 4 | **control:** `UserTweets`, same host and headers | **`200`**, 516 KB |
+| 5 | legacy REST `1.1/search/tweets.json` | `404`, code 34 "that page does not exist" |
 
-| # | Request (same token, same headers) | Result | Rules out |
-|---|---|---|---|
-| 1 | `SearchTimeline` on `api.x.com` | `404`, body length **0** | — |
-| 2 | `SearchTimeline` on `x.com/i/api` | `404`, body length **0** | a host or CORS artifact |
-| 3 | **control:** `UserByScreenName`, same host and headers | `200`, 2723 bytes | transport, headers, bearer and guest token are all fine |
-| 4 | **control:** a deliberately invalid query id | `404`, `{"message":"Query not found"}` | shows what a *routing* 404 looks like — and it is not this |
-| 5 | legacy REST `1.1/search/tweets.json` | `404`, code 34 | retired for anonymous clients |
+Controls 3 and 4 are what make this conclusive: the transport, the bearer, the guest
+token and the header set are all demonstrably fine, because two other operations
+answer `200` over exactly the same request. Search does not.
 
-The signature is distinctive: a valid query id taken from X's own bundle, transport
-proven working by control 3, and an **empty** 404 that differs from the
-"Query not found" 404 of control 4. That is an authorization wall expressed as a
-404 — hiding existence rather than answering "forbidden". Guest tokens carry no
-search scope.
+**What I cannot tell you** is whether X means "forbidden" or "no such route": a
+deliberately invalid query id also returns an empty 404, so the response body does
+not distinguish an authorization wall from a missing one. I probed for that
+distinction and it is not reliably observable from outside. What is observable, and
+sufficient, is that the operation is not reachable with a guest token while others
+are.
 
-The only remaining door is a session cookie pair (`auth_token` + `ct0`), i.e. an
-account. Shipping that responsibly means a pool of programmatically-created,
-rotated accounts with fail-closed handling — a system, not a feature, and one that
-trips bans and ToS. The brief forbids a personal session, and I am not going to
-pretend a half-working search is better than a documented wall.
+The remaining door is a session cookie pair (`auth_token` + `ct0`), i.e. an account.
+Shipping that responsibly means a pool of programmatically-created, rotated accounts
+with fail-closed handling — a system, not a feature, and one that trips bans and
+ToS. The brief forbids a personal session, and a half-working search that gets the
+client banned is worse than a documented wall.
 
 So the actor **rejects `searchTerms` at validation**, quoting the observation:
 
@@ -203,7 +208,16 @@ UserByScreenName returns 200 over the identical transport). Use fromUsers and/or
 tweetIds instead.
 ```
 
----
+### `UserTweetsAndReplies` is walled the same way
+
+Verified 2026-08-20: **404 with an empty body**, with the query id taken from the
+bundle that same minute, while `UserTweets` returned `200` for the same user over
+the same connection. So `includeReplies: true` cannot use the replies timeline.
+
+Rather than failing the target, the actor **degrades to the main timeline** and says
+so, in the log and in the run summary (`errors.replies_timeline_unavailable`).
+Replies that appear on the author's main timeline are still returned; standalone
+replies are not.
 
 ## Free-tier protection
 
@@ -342,21 +356,45 @@ injectable port so (3) stays a configuration change rather than a rewrite.
 
 ## Performance
 
-**Measured, no proxy, 2026-08-19:** 116 tweets across 6 pages in **2776 ms**,
-10 requests total including the token mint, bundle fetches and profile lookup.
+**Measured on the deployed actor, residential proxy, entitled run, 2026-08-20:**
 
-**Not yet measured on residential proxy.** The estimate is 5–6s for 100 items
-(≈600ms RTT vs ≈80ms direct, 6 sequential pages), which is comfortably inside the
-30-second band — but it is an estimate, and it is labelled as one. I would rather
-report a measured number with its conditions than an unlabelled one.
+| Target | Items | Wall clock | Requests | Retries |
+|---|---|---|---|---|
+| `elonmusk`, `maxResults: 100` | **99** | **7.1 s** | 2 | 0 |
+| `apify`, `maxResults: 100` | 100 | 27.4 s | 13 | 0 |
 
-An important finding: **X does not honour `count`.** Measured across 20/40/100/200,
-`UserTweets` returns 20 entries every time, so the page-size lever does not exist.
-The margin comes from keep-alive, from resolving query ids and the guest token
-concurrently, and from cross-target parallelism. Pages *within* one author are
-strictly serial, because each needs the previous page's cursor.
+Run ids: `7h7fLS2ApJrovWdma` (residential) and `zwYXrq0UZ6T001IeD` (default proxy).
+No bans, no 429s, no duplicate ids in either.
 
----
+### Why one number is 7 s and the other 27 s
+
+X's guest timeline behaves differently per account, and this is the single most
+important operational finding in the project:
+
+| | `elonmusk` | `apify` |
+|---|---|---|
+| Entries in page 1 | **99** | 17 |
+| Bottom cursor | **absent** | present |
+| Pages available to a guest | **1** | many |
+
+A busy author comes back with ~99 tweets in **one request** and no cursor at all —
+X hands an anonymous visitor a single batch and stops. A quieter account returns
+~20 entries per page *with* a cursor, and pages normally.
+
+So for the §8 benchmark shape — one high-volume author, 100 results — the honest
+statement is: **99 results in 7.1 seconds, and the hundredth is not reachable from
+that surface**, because X does not offer a cursor to continue. Reaching exactly 100
+requires a second target. I would rather report that than quietly return 99 and let
+the number look like a rounding error.
+
+`count` is ignored entirely: measured at 20, 40, 100 and 200, the response is
+byte-for-byte the same shape. Page size is not a lever.
+
+Where the remaining time goes on the multi-page case: residential RTT dominates at
+roughly 600 ms per request, and pages within one author are strictly serial because
+each needs the previous page's cursor. The levers that do exist are keep-alive
+(one TLS handshake per session instead of one per request), resolving query ids and
+the guest token concurrently, and parallelism across targets.
 
 ## Testing
 
@@ -386,7 +424,11 @@ API and committed under `test/fixtures/`. Worth calling out:
   timelines, which are chronological. No ranked surface is implemented.
 - **`source` is usually `null`** on guest responses — X often omits it.
 - **`views` is usually `null`** — absent on every tweet sampled.
-- **Timeline depth** is bounded by what X serves anonymously (~3,200 tweets).
+- **Timeline depth for a guest is account-dependent and can be a single page.**
+  High-volume authors return ~99 tweets with no cursor, so that is the ceiling for
+  one target. See [Performance](#performance).
+- **`includeReplies` is best-effort**, because the replies timeline is not reachable
+  with a guest token. It degrades to the main timeline and reports it.
 - **The residential benchmark is an estimate**, not a measurement.
 - **Query ids and payload shapes are undocumented and change without notice.** The
   runtime registry and the fixtures mitigate this; they do not eliminate it.

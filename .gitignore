@@ -7,3 +7,6 @@ apify_storage/
 .DS_Store
 storage/
 apify_storage/
+.cf-token
+.secrets.json
+.apify-token

@@ -31,7 +31,11 @@ export interface RunContext {
     readonly persist?: () => Promise<void>;
 }
 
-/** X fixes author timeline pages at 20 entries; `count` is not honoured. */
+/**
+ * Sent for completeness only: X ignores `count`. What it returns depends on the
+ * account — a busy author may come back with ~99 entries and **no cursor at all**,
+ * which is the ceiling of this surface for guests.
+ */
 const PAGE_SIZE = 20;
 const MAX_PAGES_PER_AUTHOR = 200;
 
@@ -145,6 +149,7 @@ async function scrapeAuthor(
     }
 
     let cursor = context.state.cursors[handle] ?? null;
+    let repliesDegraded = false;
     let pages = 0;
     let fetched = 0;
     let kept = 0;
@@ -157,6 +162,12 @@ async function scrapeAuthor(
                 cursor,
                 count: PAGE_SIZE,
                 includeReplies: context.input.includeReplies,
+                onRepliesUnavailable: () => {
+                    if (repliesDegraded) return;
+                    repliesDegraded = true;
+                    context.summary.countError('replies_timeline_unavailable');
+                    log('includeReplies degraded: the replies timeline is closed to guests, using the main timeline', { handle });
+                },
             });
         } catch (error: unknown) {
             context.summary.countError('timeline_fetch');
